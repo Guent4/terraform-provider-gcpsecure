@@ -1,0 +1,20 @@
+# Build output
+terraform-provider-gcpsecure
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Terraform (for examples or local usage)
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
