@@ -14,14 +14,14 @@ The provider offers (and will grow to include) multiple resources designed to av
 
 ### From the Terraform Registry
 
-Add the provider to your Terraform configuration:
+Add the provider to your Terraform configuration (replace the version with the desired version of the provider):
 
 ```hcl
 terraform {
   required_providers {
     gcpsecure = {
       source  = "registry.terraform.io/Guent4/gcpsecure"
-      version = "~> 0.1"
+      version = "~> <version>"
     }
   }
 }
@@ -108,51 +108,26 @@ Creates a GCP service account key. The private key JSON is **never** stored in T
 | `secret_manager_secret_version_name` | `string` | Full resource name of the Secret Manager version storing the key (if `secret_manager_secret_id` was set). |
 | `alias_present`                      | `bool`   | Whether the alias currently exists on the Secret Manager secret (used to detect drift). |
 
+### `gcpsecure_apikeys_key`
+
+Creates a GCP API key (equivalent to `google_apikeys_key`). The key string is **never** stored in Terraform state; it is written directly into the Secret Manager secret specified by `secret_manager_secret_id` at creation time.
+
+| Argument                       | Type     | Required | Description                                                                 |
+|--------------------------------|----------|----------|-----------------------------------------------------------------------------|
+| `name`                         | `string` | **Yes**  | Key ID (resource name). Must be unique in the project, RFC-1034, lowercase, max 63 chars. Pattern: `[a-z]([a-z0-9-]{0,61}[a-z0-9])?` |
+| `secret_manager_secret_id`     | `string` | **Yes**  | Secret Manager secret (ID or full name) where the API key string is stored as a new version. |
+| `display_name`                 | `string` | No       | Human-readable display name.                                               |
+| `project`                      | `string` | No       | GCP project ID. Defaults to the provider `project`.                        |
+| `restrictions`                 | `list`   | No       | Key restrictions. One block with `api_targets` (list of `service` + `methods`) to restrict which APIs can be called. |
+
+| Attribute                             | Type     | Description                                                                 |
+|--------------------------------------|----------|-----------------------------------------------------------------------------|
+| `id`                                 | `string` | Full resource name (e.g. `projects/PROJECT_NUMBER/locations/global/keys/KEY_ID`). |
+| `uid`                                | `string` | Unique id in UUID4 format.                                                 |
+| `secret_manager_secret_version_name` | `string` | Full resource name of the Secret Manager version storing the API key.     |
+
 ## Example usage
 
-### Service account key (no key in state)
-
-```hcl
-terraform {
-  required_providers {
-    google   = { source = "hashicorp/google", version = ">= 4.0" }
-    gcpsecure = { source = "registry.terraform.io/Guent4/gcpsecure", version = "~> 0.1" }
-  }
-}
-
-variable "project_id" {
-  type        = string
-  description = "GCP project ID"
-}
-
-provider "google" {
-  project = var.project_id
-}
-
-provider "gcpsecure" {
-  project = var.project_id
-}
-
-resource "google_service_account" "example" {
-  project      = var.project_id
-  account_id   = "my-app-sa"
-  display_name = "Example service account"
-}
-
-resource "gcpsecure_service_account_key" "example" {
-  service_account_id = google_service_account.example.email
-  project            = var.project_id
-  enabled            = true
-}
-
-output "key_id" {
-  value = gcpsecure_service_account_key.example.key_id
-}
-
-output "key_name" {
-  value = gcpsecure_service_account_key.example.name
-}
-```
 
 ### Service account key with Secret Manager
 
@@ -175,6 +150,36 @@ resource "gcpsecure_service_account_key" "example" {
 
 output "secret_version" {
   value = gcpsecure_service_account_key.example.secret_manager_secret_version_name
+}
+```
+
+### API key with Secret Manager
+
+Create an API key and store the key string in Secret Manager (key string is never in state):
+
+```hcl
+resource "google_secret_manager_secret" "apikey" {
+  project   = var.project_id
+  secret_id = "my-api-key"
+  replication { auto {} }
+}
+
+resource "gcpsecure_apikeys_key" "example" {
+  name                        = "my-api-key"
+  display_name                = "Example API key"
+  project                     = var.project_id
+  secret_manager_secret_id    = google_secret_manager_secret.apikey.secret_id
+  restrictions = [
+    {
+      api_targets = [
+        { service = "translate.googleapis.com", methods = ["GET*"] }
+      ]
+    }
+  ]
+}
+
+output "apikey_secret_version" {
+  value = gcpsecure_apikeys_key.example.secret_manager_secret_version_name
 }
 ```
 

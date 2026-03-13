@@ -12,34 +12,35 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
-// addKeyToSecretManagerImpl decodes the base64 PrivateKeyData from the IAM API
-// and adds it as a new version to the given Secret Manager secret.
-// Returns the full resource name of the created secret version (e.g. projects/.../secrets/.../versions/N).
-func addKeyToSecretManagerImpl(ctx context.Context, base64KeyData, secretID, resourceProject string, providerData *ProviderData) (versionName string, err error) {
-	payload, err := base64.StdEncoding.DecodeString(base64KeyData)
-	if err != nil {
-		return "", fmt.Errorf("decode key data: %w", err)
-	}
-
-	project := resourceProject
+// resolveSecretManagerParent returns the full secret parent (e.g. projects/PROJECT/secrets/SECRET_ID)
+// and the project ID used, for the given secretID and resourceProject.
+func resolveSecretManagerParent(secretID, resourceProject string, providerData *ProviderData) (parent, project string, err error) {
+	project = resourceProject
 	if project == "" && providerData != nil && !providerData.Project.IsNull() {
 		project = providerData.Project.ValueString()
 	}
 	if project == "" {
-		return "", fmt.Errorf("project is required to store key in Secret Manager")
+		return "", "", fmt.Errorf("project is required to store in Secret Manager")
 	}
-
-	parent := secretID
+	parent = secretID
 	if !strings.HasPrefix(secretID, "projects/") {
 		parent = fmt.Sprintf("projects/%s/secrets/%s", project, secretID)
 	}
+	return parent, project, nil
+}
 
+// addPayloadToSecretManager adds the given payload as a new version to the given Secret Manager secret.
+// Returns the full resource name of the created secret version (e.g. projects/.../secrets/.../versions/N).
+func addPayloadToSecretManager(ctx context.Context, payload []byte, secretID, resourceProject string, providerData *ProviderData) (versionName string, err error) {
+	parent, _, err := resolveSecretManagerParent(secretID, resourceProject, providerData)
+	if err != nil {
+		return "", err
+	}
 	client, err := secretmanager.NewClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("create Secret Manager client: %w", err)
 	}
 	defer client.Close()
-
 	ver, err := client.AddSecretVersion(ctx, &secretmanagerpb.AddSecretVersionRequest{
 		Parent: parent,
 		Payload: &secretmanagerpb.SecretPayload{
@@ -50,6 +51,17 @@ func addKeyToSecretManagerImpl(ctx context.Context, base64KeyData, secretID, res
 		return "", fmt.Errorf("add secret version: %w", err)
 	}
 	return ver.Name, nil
+}
+
+// addKeyToSecretManagerImpl decodes the base64 PrivateKeyData from the IAM API
+// and adds it as a new version to the given Secret Manager secret.
+// Returns the full resource name of the created secret version (e.g. projects/.../secrets/.../versions/N).
+func addKeyToSecretManagerImpl(ctx context.Context, base64KeyData, secretID, resourceProject string, providerData *ProviderData) (versionName string, err error) {
+	payload, err := base64.StdEncoding.DecodeString(base64KeyData)
+	if err != nil {
+		return "", fmt.Errorf("decode key data: %w", err)
+	}
+	return addPayloadToSecretManager(ctx, payload, secretID, resourceProject, providerData)
 }
 
 // secretVersionAliasExists returns true if the secret has the given alias pointing to the given version.

@@ -62,5 +62,6 @@ func (p *gcpSecureProvider) DataSources(_ context.Context) []func() datasource.D
 func (p *gcpSecureProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewServiceAccountKeyResource,
+		NewApiKeysKeyResource,
 	}
 }
